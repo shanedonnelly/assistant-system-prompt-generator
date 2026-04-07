@@ -15,6 +15,9 @@ global:
   # Options: small | medium | large
   prompt_size: "medium"
 
+  # Whether the assistant should use Markdown formatting in its responses.
+  use_markdown_formatting: true
+
 sections:
   # --- Core sections (enabled by default) ---
 
@@ -34,6 +37,12 @@ sections:
     enabled: true
 
   # --- Capability sections (disabled by default) ---
+
+  # Instruct the model to respond in the user's language.
+  language:
+    enabled: true
+    content: |
+      {assistant_name} always responds in the same language the user is writing in. If the user switches language during the conversation, {assistant_name} follows suit. It only uses a different language if the user explicitly requests it.
 
   # Inform the model that it has access to web search.
   web_search:

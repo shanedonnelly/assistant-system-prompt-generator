@@ -17,26 +17,37 @@ CONFIG_PATH = "config/config.yaml"
 BASED_PROMPTS_PATH = "config/based_prompts.yaml"
 OUTPUT_PATH = "output/system_prompt.txt"
 
-# Sections enabled by default when not explicitly configured
-DEFAULT_ENABLED = {"base", "tone_and_formatting", "evenhandedness", "responding_to_mistakes_and_criticism", "security"}
-
-# Logical order of sections in the generated prompt
 SECTION_ORDER = [
     "base",
     "tone_and_formatting",
     "evenhandedness",
     "responding_to_mistakes_and_criticism",
     "security",
+    "language",
     "web_search",
     "multimodal_capabilities",
     "product_information",
     "knowledge_cutoff",
 ]
 
+REQUIRED_GLOBAL_FIELDS = ["assistant_name", "current_datetime", "prompt_size", "use_markdown_formatting"]
+
 
 def load_yaml(path):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def require_field(config, field_path):
+    """Walk a dot-separated field path and error if missing."""
+    keys = field_path.split(".")
+    current = config
+    for key in keys:
+        if not isinstance(current, dict) or key not in current:
+            print(f"Error: Required field '{field_path}' is missing from config.yaml.")
+            sys.exit(1)
+        current = current[key]
+    return current
 
 
 def replace_variables(text, assistant_name, current_datetime):
@@ -45,101 +56,104 @@ def replace_variables(text, assistant_name, current_datetime):
     return text
 
 
+def strip_blank_lines(text):
+    """Remove blank lines from text, keeping only non-empty lines."""
+    return "\n".join(line for line in text.splitlines() if line.strip())
+
+
 def wrap_section(tag, content):
-    return f"<{tag}>\n{content.strip()}\n</{tag}>"
+    return f"<{tag}>\n{strip_blank_lines(content)}\n</{tag}>"
 
 
-def build_multimodal_section(bp, section_cfg, prompt_size):
+def build_multimodal_section(section_cfg, assistant_name):
+    capabilities = {
+        "images": section_cfg["can_process_images"],
+        "videos": section_cfg["can_process_videos"],
+        "audio": section_cfg["can_process_audio"],
+        "documents": section_cfg["can_process_documents"],
+    }
+
+    can = [k for k, v in capabilities.items() if v]
+    cannot = [k for k, v in capabilities.items() if not v]
+
     parts = []
+    if can:
+        parts.append(f"{assistant_name} can receive and process {', '.join(can)}.")
+    if cannot:
+        parts.append(f"{assistant_name} cannot process {', '.join(cannot)}. If a user sends one of these, it should politely explain the limitation and suggest an alternative.")
 
-    intro = bp.get("intro", "")
-    if intro:
-        parts.append(intro)
-
-    capabilities = [
-        ("can_process_images", "images"),
-        ("can_process_videos", "videos"),
-        ("can_process_audio", "audio"),
-        ("can_process_documents", "documents"),
-    ]
-
-    for cap_key, _ in capabilities:
-        cap_value = section_cfg.get(cap_key, False)
-        cap_texts = bp.get(cap_key, {})
-        key = "true" if cap_value else "false"
-        text = cap_texts.get(key, "")
-        if text:
-            parts.append(text)
-
-    return "\n\n".join(parts)
+    return " ".join(parts)
 
 
-def build_section_content(section_name, bp, section_cfg, prompt_size):
+def build_section_content(section_name, bp, section_cfg, prompt_size, assistant_name):
     if section_name == "multimodal_capabilities":
-        return build_multimodal_section(bp, section_cfg, prompt_size)
+        return build_multimodal_section(section_cfg, assistant_name)
 
-    if section_name == "product_information":
+    if section_name in ("product_information", "language"):
         intro = bp.get("intro", "")
         user_content = section_cfg.get("content", "").strip()
         if intro and user_content:
-            return f"{intro}\n\n{user_content}"
+            return f"{intro}\n{user_content}"
         return user_content or intro
 
     if section_name == "knowledge_cutoff":
-        cutoff_date = section_cfg.get("date", "")
-        text = bp.get(prompt_size) or bp.get("medium", "")
+        cutoff_date = section_cfg["date"]
+        text = bp[prompt_size]
         return text.replace("{cutoff_date}", cutoff_date)
 
-    # Standard pre-written sections with size variants
-    return bp.get(prompt_size) or bp.get("medium", "")
+    return bp[prompt_size]
 
 
 def generate_prompt(config, based_prompts):
-    global_cfg = config.get("global", {}) or {}
-    assistant_name = (global_cfg.get("assistant_name") or "AI Assistant").strip() or "AI Assistant"
-    current_datetime = global_cfg.get("current_datetime") or "{{CURRENT_DATETIME}}"
-    prompt_size = global_cfg.get("prompt_size") or "medium"
+    global_cfg = config["global"]
+    for field in REQUIRED_GLOBAL_FIELDS:
+        require_field(config, f"global.{field}")
+
+    assistant_name = global_cfg["assistant_name"]
+    current_datetime = global_cfg["current_datetime"]
+    prompt_size = global_cfg["prompt_size"]
+    use_markdown = global_cfg["use_markdown_formatting"]
 
     if prompt_size not in ("small", "medium", "large"):
-        print(f"Warning: unknown prompt_size '{prompt_size}', falling back to 'medium'.")
-        prompt_size = "medium"
+        print(f"Error: prompt_size must be 'small', 'medium', or 'large'. Got '{prompt_size}'.")
+        sys.exit(1)
 
-    sections_config = config.get("sections", {}) or {}
+    sections_config = config["sections"]
     parts = []
 
     for section_name in SECTION_ORDER:
-        section_cfg = sections_config.get(section_name, {}) or {}
-        enabled = section_cfg.get("enabled")
-        if enabled is None:
-            enabled = section_name in DEFAULT_ENABLED
-        if not enabled:
+        section_cfg = sections_config.get(section_name, {})
+        if not section_cfg.get("enabled", False):
             continue
 
-        bp = based_prompts.get(section_name, {}) or {}
-        content = build_section_content(section_name, bp, section_cfg, prompt_size)
+        bp = based_prompts.get(section_name, {})
+        content = build_section_content(section_name, bp, section_cfg, prompt_size, assistant_name)
+
+        if section_name == "base" and use_markdown:
+            content += f"\n{assistant_name} uses Markdown formatting."
 
         if content:
             content = replace_variables(content, assistant_name, current_datetime)
             parts.append(wrap_section(section_name, content))
 
-    # Custom sections
     custom_sections = config.get("custom_sections") or []
     for cs in custom_sections:
-        title = (cs.get("title") or "custom").strip()
-        content = (cs.get("content") or "").strip()
+        title = cs["title"].strip()
+        content = cs["content"].strip()
         if content:
             content = replace_variables(content, assistant_name, current_datetime)
             tag = title.lower().replace(" ", "_").replace("-", "_")
             parts.append(wrap_section(tag, content))
 
-    inner = "\n\n".join(parts)
-    return wrap_section("assistant_behavior", "\n" + inner + "\n")
+    inner = "\n".join(parts)
+    closing = f"{assistant_name} is now being connected with a person."
+    return f"<assistant_behavior>\n{inner}\n</assistant_behavior>\n{closing}"
 
 
 def main():
     if not os.path.exists(CONFIG_PATH):
         print(f"Error: Config file not found at '{CONFIG_PATH}'.")
-        print("Copy config/config.yaml.example to config/config.yaml and customize it.")
+        print("Copy config/config.example.yaml to config/config.yaml and customize it.")
         sys.exit(1)
 
     if not os.path.exists(BASED_PROMPTS_PATH):
@@ -157,8 +171,9 @@ def main():
 
     word_count = len(prompt.split())
     char_count = len(prompt)
+    token_count = char_count // 4  # Rough estimate: 1 token ~ 4 characters
     print(f"System prompt generated: {OUTPUT_PATH}")
-    print(f"Size: {word_count} words / {char_count} characters")
+    print(f"Size: {word_count} words / {char_count} characters / {token_count} tokens")
 
 
 if __name__ == "__main__":
