@@ -208,4 +208,5 @@ __marimo__/
 
 context/
 output/*
+config/config.yaml
 !output/.gitkeep

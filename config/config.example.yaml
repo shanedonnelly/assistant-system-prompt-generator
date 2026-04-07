@@ -1,0 +1,79 @@
+# Assistant System Prompt Generator — Configuration Example
+# Copy this file to config/config.yaml and customize it.
+
+global:
+  # Name of the assistant displayed in the prompt.
+  # If empty, defaults to "AI Assistant".
+  assistant_name: "MyAssistant"
+
+  # Current date/time placeholder injected into the prompt.
+  # Default uses the OpenWebUI runtime variable syntax.
+  # Change to the appropriate placeholder for your system, or set a fixed value.
+  current_datetime: "{{CURRENT_DATETIME}}"
+
+  # Controls the verbosity of all pre-written sections.
+  # Options: small | medium | large
+  prompt_size: "medium"
+
+sections:
+  # --- Core sections (enabled by default) ---
+
+  base:
+    enabled: true
+
+  tone_and_formatting:
+    enabled: true
+
+  evenhandedness:
+    enabled: true
+
+  responding_to_mistakes_and_criticism:
+    enabled: true
+
+  security:
+    enabled: true
+
+  # --- Capability sections (disabled by default) ---
+
+  # Inform the model that it has access to web search.
+  web_search:
+    enabled: false
+
+  # Inform the model about its multimodal capabilities.
+  # Set each capability to true or false to generate the appropriate instructions.
+  multimodal_capabilities:
+    enabled: false
+    can_process_images: false
+    can_process_videos: false
+    can_process_audio: false
+    can_process_documents: false
+
+  # --- Context sections (disabled by default, fill in content) ---
+
+  # Provide information about the product or service the assistant is integrated into.
+  product_information:
+    enabled: false
+    content: |
+      Describe your product or service here.
+      You can use multiple lines.
+
+  # Inform the model of its training data cutoff date.
+  knowledge_cutoff:
+    enabled: false
+    date: "April 2026"
+
+# --- Custom sections ---
+# Add any number of additional sections with a title and content.
+# The title will be used as the XML tag (spaces replaced by underscores).
+# Variables available in content: {assistant_name}, {current_datetime}
+custom_sections: []
+# Example:
+# custom_sections:
+#   - title: "Language"
+#     content: |
+#       {assistant_name} always responds in the same language the user is writing in,
+#       regardless of the language used in this system prompt.
+#   - title: "Response Format"
+#     content: |
+#       Unless the user requests otherwise, {assistant_name} keeps its answers concise
+#       and avoids unnecessary repetition.
